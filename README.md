@@ -208,6 +208,16 @@ click **More info > Run anyway**.
 If `npm run dist:win` fails with "Cannot create symbolic link", extract the cached winCodeSign archive once:
 `node_modules/7zip-bin/win/x64/7za.exe x <%LOCALAPPDATA%>/electron-builder/Cache/winCodeSign/<newest>.7z -o<same folder>/winCodeSign-2.6.0`.
 
+## macOS desktop app
+
+Mac builds need a Mac, so they are made on GitHub: **Actions > Desktop app (macOS) > Run workflow**
+(enter the release tag, e.g. `v1.0.0`). It also runs by itself when a new release is published.
+It builds Intel and Apple Silicon versions as `.dmg` and `.zip` and attaches them to that release.
+The build reads `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from the repo's Actions variables.
+
+The Mac app is not notarized by Apple. First open: right-click the app > **Open** > **Open**.
+If macOS says it "is damaged", run once in Terminal: `xattr -cr "/Applications/NCA Ojo Attendance.app"`.
+
 ## Install as a PWA
 
 - Android (Chrome): open the site, menu > **Install app** (or the Install button in the corner).
