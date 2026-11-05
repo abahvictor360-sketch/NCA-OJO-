@@ -5,8 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Avatar, Empty, Modal, Spinner } from "@/components/ui";
-import { fetchMembers } from "@/lib/data";
-import { supabase } from "@/lib/supabase/client";
+import { fetchMembers, useTablesVersion } from "@/lib/data";
+import { getAll, newId, remove as removeRow, upsert } from "@/lib/store";
 import { downloadCSV, formatDate, toISODate, type Member } from "@/lib/utils";
 
 type Draft = Omit<Member, "id"> & { id?: string };
@@ -19,10 +19,11 @@ export default function MembersPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
+  const version = useTablesVersion("members");
   const load = () => fetchMembers().then(setMembers);
   useEffect(() => {
     load();
-  }, []);
+  }, [version]);
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -180,19 +181,21 @@ function MemberForm({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
       active: d.active,
       joined_on: d.joined_on,
     };
-    const sb = supabase().from("members");
-    const { error } = d.id ? await sb.update(payload).eq("id", d.id) : await sb.insert(payload);
+    await upsert("members", d.id ? { id: d.id, ...payload } : { id: newId(), ...payload, created_at: new Date().toISOString() });
     setBusy(false);
-    if (error) return setError(error.message);
     onSaved();
   }
 
   async function remove() {
     if (!d.id) return;
     setBusy(true);
-    const { error } = await supabase().from("members").delete().eq("id", d.id);
+    // Remove this member's attendance and follow-ups on this device too (the server does the same)
+    for (const t of ["attendance", "follow_ups"] as const) {
+      const rows = await getAll<{ member_id: string }>(t);
+      if (rows.some((r) => r.member_id === d.id)) await removeRow(t, { member_id: d.id });
+    }
+    await removeRow("members", { id: d.id });
     setBusy(false);
-    if (error) return setError(error.message);
     onSaved();
   }
 
@@ -316,7 +319,12 @@ function ImportDialog({ existing, onClose, onDone }: { existing: Member[]; onClo
     if (!rows?.length) return;
     setBusy(true);
     for (let i = 0; i < rows.length; i += 200) {
-      const { error } = await supabase().from("members").insert(rows.slice(i, i + 200));
+      const now = new Date().toISOString();
+      await upsert(
+        "members",
+        rows.slice(i, i + 200).map((r) => ({ id: newId(), active: true, notes: null, created_at: now, ...r })),
+      );
+      const error = null as { message: string } | null;
       if (error) {
         setError(error.message);
         setBusy(false);

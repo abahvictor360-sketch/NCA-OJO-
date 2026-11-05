@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { ClipboardCheck, PhoneCall } from "lucide-react";
 import { PageHeader, useAdmin } from "@/components/Shell";
 import { Avatar, Delta, Empty, LineChart, Spinner, SplitBar, Trend } from "@/components/ui";
-import { fetchMembers, fetchReport, fetchServiceSummaries, type ServiceSummary } from "@/lib/data";
-import { supabase } from "@/lib/supabase/client";
+import { fetchMembers, fetchReport, fetchServiceSummaries, useTablesVersion, type ServiceSummary } from "@/lib/data";
+import type { FollowUp } from "@/lib/logic";
+import { getAll } from "@/lib/store";
 import { formatDate, pct, type Member, type ReportRow } from "@/lib/utils";
 
 type FollowUpRow = { id: string; done: boolean; members: { full_name: string } | null; services: { service_date: string } | null };
@@ -19,33 +20,40 @@ export default function OverviewPage() {
   const [openFollowUps, setOpenFollowUps] = useState<FollowUpRow[]>([]);
   const [doneCount, setDoneCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const version = useTablesVersion("members", "services", "attendance", "follow_ups");
 
   useEffect(() => {
     (async () => {
       try {
-        const sb = supabase();
-        const [m, s, r, open, done] = await Promise.all([
+        const [m, s, r, fus, allServices] = await Promise.all([
           fetchMembers(),
           fetchServiceSummaries(12),
           fetchReport(),
-          sb
-            .from("follow_ups")
-            .select("id, done, members(full_name), services(service_date)")
-            .eq("done", false)
-            .order("created_at", { ascending: false })
-            .limit(500),
-          sb.from("follow_ups").select("id", { count: "exact", head: true }).eq("done", true),
+          getAll<FollowUp>("follow_ups"),
+          fetchServiceSummaries(100000),
         ]);
+        const name = new Map(m.map((x) => [x.id, x.full_name]));
+        const date = new Map(allServices.map((x) => [x.id, x.service_date]));
         setMembers(m);
         setServices(s);
         setReport(r);
-        setOpenFollowUps((open.data ?? []) as unknown as FollowUpRow[]);
-        setDoneCount(done.count ?? 0);
+        setOpenFollowUps(
+          fus
+            .filter((f) => !f.done)
+            .sort((x, y) => (date.get(y.service_id) ?? "").localeCompare(date.get(x.service_id) ?? ""))
+            .map((f) => ({
+              id: f.id,
+              done: f.done,
+              members: { full_name: name.get(f.member_id) ?? "Removed member" },
+              services: { service_date: date.get(f.service_id) ?? "" },
+            })),
+        );
+        setDoneCount(fus.filter((f) => f.done).length);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load data");
       }
     })();
-  }, []);
+  }, [version]);
 
   if (error) return <Empty>{error}</Empty>;
   if (!members)
@@ -71,10 +79,10 @@ export default function OverviewPage() {
   return (
     <>
       <PageHeader title={`Welcome, ${firstName}`} subtitle="New Creation Assembly Ojo · Overcomers Parish">
-        <Link href="/follow-ups" className="btn-outline btn-md">
+        <Link href="/follow-ups/" className="btn-outline btn-md">
           <PhoneCall className="size-4" /> Follow-ups
         </Link>
-        <Link href="/attendance" className="btn-primary btn-md">
+        <Link href="/attendance/" className="btn-primary btn-md">
           <ClipboardCheck className="size-4" /> Take Attendance
         </Link>
       </PageHeader>
@@ -91,7 +99,7 @@ export default function OverviewPage() {
               </div>
               <p className="mt-0.5 text-xs text-muted">{last ? formatDate(last.service_date, { weekday: "short" }) : "No closed service yet"}</p>
             </div>
-            <Link href="/reports" className="btn-outline btn-sm">Report</Link>
+            <Link href="/reports/" className="btn-outline btn-sm">Report</Link>
           </div>
           <div className="mt-5">
             <LineChart values={chron.map((s) => s.present)} labels={chron.length > 1 ? [formatDate(chron[0]!.service_date, { year: undefined }), formatDate(chron.at(-1)!.service_date, { year: undefined })] : undefined} />
@@ -109,7 +117,7 @@ export default function OverviewPage() {
               <p className="card-title">Active Members</p>
               <p className="mt-1 text-3xl font-semibold">{active.length}</p>
             </div>
-            <Link href="/members" className="btn-outline btn-sm">Manage</Link>
+            <Link href="/members/" className="btn-outline btn-sm">Manage</Link>
           </div>
           <div className="mt-5 grid flex-1 grid-cols-3 divide-x divide-line border-t border-line pt-4">
             <Stat label="Male" value={male} total={active.length} color="var(--color-navy-600)" />
@@ -129,7 +137,7 @@ export default function OverviewPage() {
                 <Delta value={lastRate - prevRate} />
               </div>
             </div>
-            <Link href="/reports" className="btn-outline btn-sm">Details</Link>
+            <Link href="/reports/" className="btn-outline btn-sm">Details</Link>
           </div>
           <div className="mt-5 space-y-2.5 text-sm">
             <Row label="Services recorded" value={closed.length} />
@@ -148,7 +156,7 @@ export default function OverviewPage() {
               <p className="card-title">Open Follow-ups</p>
               <p className="mt-1 text-3xl font-semibold">{openFollowUps.length}</p>
             </div>
-            <Link href="/follow-ups" className="btn-outline btn-sm">Details</Link>
+            <Link href="/follow-ups/" className="btn-outline btn-sm">Details</Link>
           </div>
           <div className="mt-5">
             <SplitBar
@@ -177,7 +185,7 @@ export default function OverviewPage() {
               <p className="card-title">Missed in a Row</p>
               <p className="mt-1 text-3xl font-semibold">{streaks.length}</p>
             </div>
-            <Link href="/reports" className="btn-outline btn-sm">View all</Link>
+            <Link href="/reports/" className="btn-outline btn-sm">View all</Link>
           </div>
           <table className="mt-4 w-full">
             <thead>
@@ -208,7 +216,7 @@ export default function OverviewPage() {
         <section className="card">
           <div className="flex items-start justify-between">
             <p className="card-title">Recent Services</p>
-            <Link href="/attendance" className="btn-outline btn-sm">Open</Link>
+            <Link href="/attendance/" className="btn-outline btn-sm">Open</Link>
           </div>
           <ul className="mt-4 space-y-3">
             {services.slice(0, 6).map((s) => {

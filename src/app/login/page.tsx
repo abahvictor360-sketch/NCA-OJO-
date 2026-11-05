@@ -1,9 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Lock, Mail } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
+
+// Confirmation emails must open the live site, also when signing up from the desktop app
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://nca-ojo-attendance.vercel.app";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -12,6 +15,13 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"signin" | "setup">("signin");
   const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase().auth.getSession();
+      if (data.session) window.location.href = "/";
+    })();
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +32,7 @@ export default function LoginPage() {
       const { data, error } = await supabase().auth.signUp({
         email: email.trim().toLowerCase(),
         password,
-        options: { emailRedirectTo: `${window.location.origin}/login` },
+        options: { emailRedirectTo: `${SITE_URL}/login/` },
       });
       setBusy(false);
       if (error) {

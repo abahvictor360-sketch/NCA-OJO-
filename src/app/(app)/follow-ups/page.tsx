@@ -4,17 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, MessageCircle, Phone, Search } from "lucide-react";
 import { PageHeader, useAdmin } from "@/components/Shell";
 import { Avatar, Empty, Spinner } from "@/components/ui";
-import { fetchReport } from "@/lib/data";
-import { supabase } from "@/lib/supabase/client";
+import { fetchMembers, fetchReport, fetchServiceSummaries, useTablesVersion } from "@/lib/data";
+import type { FollowUp as FollowUpRow } from "@/lib/logic";
+import { getAll, upsert } from "@/lib/store";
 import { formatDate, whatsappNumber, type ReportRow } from "@/lib/utils";
 
-type FollowUp = {
-  id: string;
-  done: boolean;
-  note: string | null;
-  done_by: string | null;
-  done_at: string | null;
-  member_id: string;
+type FollowUp = FollowUpRow & {
   members: { full_name: string; phone: string | null } | null;
   services: { service_date: string } | null;
 };
@@ -26,24 +21,34 @@ export default function FollowUpsPage() {
   const [show, setShow] = useState<"open" | "done">("open");
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const version = useTablesVersion("follow_ups", "members", "services", "attendance");
 
   useEffect(() => {
-    setItems(null);
     (async () => {
-      const [{ data, error }, report] = await Promise.all([
-        supabase()
-          .from("follow_ups")
-          .select("id, done, note, done_by, done_at, member_id, members(full_name, phone), services(service_date)")
-          .eq("done", show === "done")
-          .order("created_at", { ascending: false })
-          .range(0, 1999),
+      const [fus, members, services, report] = await Promise.all([
+        getAll<FollowUpRow>("follow_ups"),
+        fetchMembers(),
+        fetchServiceSummaries(100000),
         fetchReport(),
       ]);
-      if (error) return setError(error.message);
-      setItems((data ?? []) as unknown as FollowUp[]);
+      const m = new Map(members.map((x) => [x.id, x]));
+      const sv = new Map(services.map((x) => [x.id, x]));
+      setItems(
+        fus
+          .filter((f) => f.done === (show === "done"))
+          .map((f) => {
+            const mem = m.get(f.member_id);
+            const svc = sv.get(f.service_id);
+            return {
+              ...f,
+              members: mem ? { full_name: mem.full_name, phone: mem.phone } : null,
+              services: svc ? { service_date: svc.service_date } : null,
+            };
+          }),
+      );
       setStats(new Map(report.map((r) => [r.member_id, r])));
-    })();
-  }, [show]);
+    })().catch((e) => setError(String(e)));
+  }, [show, version]);
 
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -66,8 +71,7 @@ export default function FollowUpsPage() {
         : {}),
     };
     setItems((list) => (list ?? []).map((x) => (x.id === f.id ? { ...x, ...full } : x)));
-    const { error } = await supabase().from("follow_ups").update(full).eq("id", f.id);
-    if (error) setError(error.message);
+    await upsert("follow_ups", { id: f.id, ...full });
   }
 
   const openCount = items?.filter((f) => !f.done).length ?? 0;

@@ -5,6 +5,7 @@ import { Copy, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { PageHeader, useAdmin } from "@/components/Shell";
 import { Avatar, Empty, Modal, Spinner } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
+import { sync } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 
 type AdminRow = { email: string; full_name: string | null; role: "super_admin" | "admin"; created_at: string };
@@ -19,7 +20,7 @@ export default function AdminsPage() {
 
   const load = async () => {
     const { data, error } = await supabase().from("admins").select("*").order("created_at");
-    if (error) return setError(error.message);
+    if (error) return setError(/fetch/i.test(error.message) ? "You need internet to manage admins." : error.message);
     setRows(data as AdminRow[]);
   };
   useEffect(() => {
@@ -35,12 +36,14 @@ export default function AdminsPage() {
     setRemoving(null);
     if (error) return setError(error.message);
     load();
+    sync();
   }
 
   async function setRole(r: AdminRow, role: AdminRow["role"]) {
     const { error } = await supabase().from("admins").update({ role }).eq("email", r.email);
     if (error) return setError(error.message);
     load();
+    sync();
   }
 
   return (
@@ -182,7 +185,11 @@ function AddAdmin({ onClose, onAdded }: { onClose: () => void; onAdded: () => vo
       .from("admins")
       .insert({ email: email.trim().toLowerCase(), full_name: name.trim() || null, role });
     setBusy(false);
-    if (error) return setError(error.code === "23505" ? "That email is already an admin." : error.message);
+    if (error)
+      return setError(
+        error.code === "23505" ? "That email is already an admin." : /fetch/i.test(error.message) ? "You need internet to add an admin." : error.message,
+      );
+    sync();
     onAdded();
   }
 

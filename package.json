@@ -1,32 +1,79 @@
 {
   "name": "nca-ojo-attendance",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.119.0",
-    "lucide-react": "^1.69.0",
-    "next": "15.5.29",
-    "papaparse": "^5.7.0",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "lint": "eslint",
+    "desktop": "next build && electron .",
+    "desktop:dev": "electron .",
+    "dist:win": "next build && electron-builder --win"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@supabase/supabase-js": "^2.119.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "docx": "^9.15.2",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "15.5.29",
+    "exceljs": "^4.4.0",
+    "idb": "^8.0.4",
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.9",
+    "lucide-react": "^1.69.0",
+    "next": "15.5.29",
+    "papaparse": "^5.7.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "main": "electron/main.js",
+  "description": "Attendance, follow-up and finance for New Creation Assembly Ojo, Overcomers Parish",
+  "author": "NCA Ojo Media Department",
+  "build": {
+    "appId": "org.ncaojo.attendance",
+    "productName": "NCA Ojo Attendance",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "electron/**",
+      "out/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "NCA Ojo Attendance"
+    },
+    "portable": {
+      "artifactName": "NCA-Ojo-Attendance-Portable-${version}.exe"
+    }
   }
 }

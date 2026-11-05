@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Download, Minus, Pencil, Plus, Trash2 } from "lucide-react";
-import { PageHeader } from "@/components/Shell";
+import { PageHeader, useAdmin } from "@/components/Shell";
 import { Empty, Modal, Spinner, SplitBar } from "@/components/ui";
-import { fetchMembers } from "@/lib/data";
-import { supabase } from "@/lib/supabase/client";
+import { fetchMembers, useTablesVersion } from "@/lib/data";
+import { getAll, newId, remove as removeRow, upsert } from "@/lib/store";
 import { downloadCSV, formatDate, toISODate, type Member } from "@/lib/utils";
 
 type Kind = "income" | "expense";
@@ -58,23 +58,24 @@ export default function FinancePage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [show, setShow] = useState<"all" | Kind>("all");
   const [editing, setEditing] = useState<Partial<Entry> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
 
   const load = async () => {
     const [from, to] = periodRange(period);
-    let q = supabase().from("finance_entries").select("*").order("entry_date", { ascending: false }).order("created_at", { ascending: false }).range(0, 4999);
-    if (from) q = q.gte("entry_date", from);
-    if (to) q = q.lte("entry_date", to);
-    const { data, error } = await q;
-    if (error) return setError(error.message);
-    setEntries((data ?? []).map((e: Entry) => ({ ...e, amount: Number(e.amount) })));
+    const all = await getAll<Entry & { created_at?: string }>("finance_entries");
+    setEntries(
+      all
+        .filter((e) => (!from || e.entry_date >= from) && (!to || e.entry_date <= to))
+        .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || (b.created_at ?? "").localeCompare(a.created_at ?? ""))
+        .map((e) => ({ ...e, amount: Number(e.amount) })),
+    );
   };
 
+  const version = useTablesVersion("finance_entries");
   useEffect(() => {
-    setEntries(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period]);
+  }, [period, version]);
 
   useEffect(() => {
     fetchMembers().then(setMembers);
@@ -281,6 +282,7 @@ function EntryForm({
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const kind = d.kind ?? "income";
+  const me = useAdmin();
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -295,18 +297,18 @@ function EntryForm({
       member_id: d.member_id || null,
       description: d.description?.trim() || null,
     };
-    const sb = supabase().from("finance_entries");
-    const { error } = d.id ? await sb.update(payload).eq("id", d.id) : await sb.insert(payload);
+    await upsert(
+      "finance_entries",
+      d.id ? { id: d.id, ...payload } : { id: newId(), ...payload, recorded_by: me.email, created_at: new Date().toISOString() },
+    );
     setBusy(false);
-    if (error) return setError(error.message);
     onSaved();
   }
 
   async function remove() {
     setBusy(true);
-    const { error } = await supabase().from("finance_entries").delete().eq("id", d.id!);
+    await removeRow("finance_entries", { id: d.id! });
     setBusy(false);
-    if (error) return setError(error.message);
     onSaved();
   }
 

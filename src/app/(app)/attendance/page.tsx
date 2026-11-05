@@ -5,14 +5,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Lock, LockOpen, Search, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Avatar, Empty, Modal, Spinner } from "@/components/ui";
-import { fetchMembers } from "@/lib/data";
-import { supabase } from "@/lib/supabase/client";
-import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
-
-type Change = RealtimePostgresChangesPayload<Record<string, unknown>>;
+import { fetchMembers, useTablesVersion } from "@/lib/data";
+import { closeService as closeLocal, reopenService, type Attendance } from "@/lib/logic";
+import { getAll, newId, remove, upsert } from "@/lib/store";
 import { formatDate, lastSunday, pct, type Member, type Service } from "@/lib/utils";
 
 type Filter = "all" | "present" | "absent";
+
+/** Same id for the same Sunday on every device, so two phones starting offline end up with one service */
+function serviceIdFor(date: string) {
+  return `00000000-0000-4000-8000-0000${date.replace(/-/g, "")}`;
+}
 
 export default function AttendancePage() {
   const router = useRouter();
@@ -26,65 +29,28 @@ export default function AttendancePage() {
   const [confirmClose, setConfirmClose] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Changes from other devices arrive through sync and bump this version
+  const version = useTablesVersion("services", "attendance", "members");
 
   const load = useCallback(async () => {
-    setService(undefined);
     setError(null);
-    const sb = supabase();
-    const [{ data: svc, error: e1 }, all] = await Promise.all([
-      sb.from("services").select("*").eq("service_date", date).maybeSingle(),
-      fetchMembers(true),
-    ]);
-    if (e1) return setError(e1.message);
+    const [services, all, att] = await Promise.all([getAll<Service>("services"), fetchMembers(true), getAll<Attendance>("attendance")]);
+    const svc = services.find((s) => s.service_date === date) ?? null;
     setMembers(all.filter((m) => m.joined_on <= date));
-    if (svc) {
-      const { data: rows } = await sb.from("attendance").select("member_id").eq("service_id", svc.id).range(0, 4999);
-      setPresent(new Set((rows ?? []).map((r: { member_id: string }) => r.member_id)));
-    } else {
-      setPresent(new Set());
-    }
-    setService((svc as Service) ?? null);
+    setPresent(new Set(svc ? att.filter((r) => r.service_id === svc.id).map((r) => r.member_id) : []));
+    setService(svc);
   }, [date]);
 
   useEffect(() => {
     load();
-  }, [load]);
-
-  // Live updates from other admins marking at the same time
-  useEffect(() => {
-    if (!service?.id) return;
-    const sb = supabase();
-    const ch = sb
-      .channel(`att-${service.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "attendance", filter: `service_id=eq.${service.id}` }, (p: Change) => {
-        const id = (p.new as { member_id: string }).member_id;
-        setPresent((s) => new Set(s).add(id));
-      })
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "attendance" }, (p: Change) => {
-        const old = p.old as { member_id?: string; service_id?: string };
-        if (old.service_id && old.service_id !== service.id) return;
-        if (!old.member_id) return;
-        setPresent((s) => {
-          const n = new Set(s);
-          n.delete(old.member_id!);
-          return n;
-        });
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "services", filter: `id=eq.${service.id}` }, (p: Change) => {
-        setService(p.new as Service);
-      })
-      .subscribe();
-    return () => {
-      sb.removeChannel(ch);
-    };
-  }, [service?.id]);
+  }, [load, version]);
 
   async function startService() {
     setBusy(true);
-    const { data, error } = await supabase().from("services").insert({ service_date: date }).select().single();
+    const svc: Service = { id: serviceIdFor(date), service_date: date, closed: false, closed_at: null };
+    await upsert("services", { ...svc, created_at: new Date().toISOString() }, { onConflict: "service_date", ignoreDuplicates: true });
     setBusy(false);
-    if (error) return setError(error.message);
-    setService(data as Service);
+    setService(svc);
   }
 
   async function toggle(id: string) {
@@ -96,35 +62,27 @@ export default function AttendancePage() {
       else n.add(id);
       return n;
     });
-    const sb = supabase().from("attendance");
-    const { error } = was
-      ? await sb.delete().eq("service_id", service.id).eq("member_id", id)
-      : await sb.upsert({ service_id: service.id, member_id: id }, { onConflict: "service_id,member_id", ignoreDuplicates: true });
-    if (error) {
-      setError(`Could not save: ${error.message}`);
-      setPresent((s) => {
-        const n = new Set(s);
-        if (was) n.add(id);
-        else n.delete(id);
-        return n;
-      });
-    }
+    if (was) await remove("attendance", { service_id: service.id, member_id: id });
+    else
+      await upsert(
+        "attendance",
+        { service_id: service.id, member_id: id, marked_at: new Date().toISOString() },
+        { ignoreDuplicates: true },
+      );
   }
 
   async function closeService() {
     if (!service) return;
     setBusy(true);
-    const { error } = await supabase().rpc("close_service", { p_service_id: service.id });
+    await closeLocal(service);
     setBusy(false);
     setConfirmClose(false);
-    if (error) return setError(error.message);
-    router.push("/follow-ups");
+    router.push("/follow-ups/");
   }
 
   async function reopen() {
     if (!service) return;
-    const { error } = await supabase().rpc("reopen_service", { p_service_id: service.id });
-    if (error) return setError(error.message);
+    await reopenService(service);
     setService({ ...service, closed: false, closed_at: null });
   }
 
@@ -334,13 +292,20 @@ function QuickAdd({ date, onClose, onAdded }: { date: string; onClose: () => voi
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    const { data, error } = await supabase()
-      .from("members")
-      .insert({ full_name: name.trim(), phone: phone.trim() || null, joined_on: date })
-      .select()
-      .single();
-    if (error) return setError(error.message);
-    onAdded(data as Member);
+    if (!name.trim()) return setError("Enter a name.");
+    const m: Member = {
+      id: newId(),
+      full_name: name.trim(),
+      phone: phone.trim() || null,
+      email: null,
+      address: null,
+      gender: null,
+      notes: null,
+      active: true,
+      joined_on: date,
+    };
+    await upsert("members", { ...m, created_at: new Date().toISOString() });
+    onAdded(m);
   }
 
   return (

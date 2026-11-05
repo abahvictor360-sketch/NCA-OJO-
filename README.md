@@ -19,6 +19,13 @@ Members never log in. Only admin emails listed in the `admins` table can sign in
 - **Follow-ups**: absent members grouped by Sunday, with Call and WhatsApp buttons, a note field and a Done button.
 - **Reports**: attended / missed / missed-in-a-row per member, per-service totals, date range, CSV export.
 - **Overview**: dashboard cards for the last service, attendance rate, members, open follow-ups.
+- **Works offline (local database)**: every device keeps a full copy of the data in IndexedDB. Screens read
+  the local copy; changes are saved locally first and sent to Supabase when there is internet. The badge in the
+  sidebar shows **Synced**, **Syncing** or **Offline · N to send** (tap it to sync now).
+- **Install as an app (PWA)**: on phones and in Chrome/Edge, use "Install" / "Add to Home screen".
+- **Windows desktop app (.exe)**: same app with its own local database, syncs with the same Supabase project.
+- **Full report**: Reports > **Full Report** downloads Excel, Word or PDF with the church logo: summary,
+  services, member attendance, follow-ups and finance for the chosen period (Excel also has a P/A register).
 - **Finance**: record tithe, offering and other income (optionally linked to a member) and expenses.
   Totals, balance and category breakdown by period, edit/delete entries, CSV export. Amounts in Naira.
 
@@ -26,11 +33,14 @@ Members never log in. Only admin emails listed in the `admins` table can sign in
 
 | Part      | What                                                   |
 | --------- | ------------------------------------------------------ |
-| Frontend  | Next.js 15 (App Router), React 19, Tailwind CSS v4     |
+| Frontend  | Next.js 15 (App Router, static export), React 19, Tailwind CSS v4 |
 | Database  | Supabase (Postgres + Auth + Realtime), project `nca-ojo-attendance` |
 | Hosting   | Vercel                                                  |
 | Icons     | lucide-react                                            |
 | CSV       | papaparse                                               |
+| Local DB  | IndexedDB via `idb` (`src/lib/store.ts`)                |
+| Reports   | exceljs, docx, jspdf + jspdf-autotable (`src/lib/report.ts`) |
+| Desktop   | Electron + electron-builder (`electron/main.js`)        |
 
 ## Project layout
 
@@ -51,7 +61,12 @@ src/
   components/ui.tsx           Charts, modal, pills, avatar
   lib/data.ts                 Supabase queries
   lib/utils.ts                Types, dates, CSV export, WhatsApp number helper
-  middleware.ts               Redirects signed-out visitors to /login
+  lib/store.ts                Local database + sync queue (offline support)
+  lib/logic.ts                Close service, report numbers (runs on the device)
+  lib/report.ts               Excel / Word / PDF report export
+  components/Pwa.tsx          Service worker registration + install button
+electron/main.js              Windows desktop app (serves ./out from app://nca)
+public/sw.js                  Service worker (opens the app offline)
 supabase/migrations/          Database schema (run in order on a new project)
 public/logo.jpg               Church logo (also the app icon)
 ```
@@ -159,6 +174,46 @@ Bola Adeyemi,08030000002,,,male,
 
 Names already in the list are skipped, so importing the same file twice is safe.
 
+## How offline and sync work
+
+- On sign in, the device downloads every table into its local database (IndexedDB).
+- Every change (attendance tap, new member, follow-up note, finance entry) is written locally and put in a queue.
+- The queue is sent to Supabase straight away when online, on reconnect, every minute, and when the badge is tapped.
+  After sending, the device downloads fresh data, so changes from other devices appear (live updates also trigger this).
+- Last write wins. Each Sunday's service has the same id on every device, so two phones that start attendance
+  offline end up with one service.
+- Signing out wipes the local copy (it warns first if changes have not been sent yet).
+- First sign-in on a new device needs internet. After that the app opens and works offline.
+- Managing admins needs internet.
+
+## Windows desktop app
+
+Build it (on Windows):
+
+```bash
+npm install
+npm run dist:win
+```
+
+Output in `dist-desktop/`:
+
+- `NCA Ojo Attendance Setup 1.0.0.exe`: installer with Start menu and desktop shortcut.
+- `NCA-Ojo-Attendance-Portable-1.0.0.exe`: single file, runs without installing.
+
+`npm run desktop` builds and opens it without packaging. The app's local database lives in
+`%APPDATA%
+ca-ojo-attendance`. The .exe is not code-signed, so Windows SmartScreen may warn the first time:
+click **More info > Run anyway**.
+
+If `npm run dist:win` fails with "Cannot create symbolic link", extract the cached winCodeSign archive once:
+`node_modules/7zip-bin/win/x64/7za.exe x <%LOCALAPPDATA%>/electron-builder/Cache/winCodeSign/<newest>.7z -o<same folder>/winCodeSign-2.6.0`.
+
+## Install as a PWA
+
+- Android (Chrome): open the site, menu > **Install app** (or the Install button in the corner).
+- iPhone (Safari): Share > **Add to Home Screen**.
+- Desktop Chrome/Edge: install icon in the address bar.
+
 ## Deploy
 
 Hosted on Vercel and connected to this GitHub repo. Every push to `main` deploys.
@@ -183,5 +238,6 @@ Vercel environment variables (Project > Settings > Environment Variables):
 | --------------- | ---------------------- |
 | `npm run dev`   | Local dev server       |
 | `npm run build` | Production build       |
-| `npm run start` | Serve production build |
 | `npm run lint`  | Lint                   |
+| `npm run desktop` | Build and open the desktop app |
+| `npm run dist:win` | Build the Windows .exe files into `dist-desktop/` |

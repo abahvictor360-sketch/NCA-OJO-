@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Search } from "lucide-react";
+import { Download, FileText, Loader2, Search } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, LineChart, Spinner } from "@/components/ui";
-import { fetchReport, fetchServiceSummaries, type ServiceSummary } from "@/lib/data";
+import { fetchReport, fetchServiceSummaries, useTablesVersion, type ServiceSummary } from "@/lib/data";
 import { downloadCSV, formatDate, pct, toISODate, type ReportRow } from "@/lib/utils";
+import type { ReportFormat } from "@/lib/report";
 
 type Range = "4" | "12" | "52" | "all";
 type Sort = "missed" | "streak" | "name";
@@ -25,8 +26,8 @@ export default function ReportsPage() {
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const version = useTablesVersion("members", "services", "attendance", "follow_ups");
   useEffect(() => {
-    setRows(null);
     const from = rangeStart(range);
     Promise.all([fetchReport(from), fetchServiceSummaries(range === "all" ? 520 : Number(range) + 1)])
       .then(([r, s]) => {
@@ -34,7 +35,7 @@ export default function ReportsPage() {
         setServices(s.filter((x) => x.closed && (!from || x.service_date >= from)));
       })
       .catch((e) => setError(e.message));
-  }, [range]);
+  }, [range, version]);
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -82,6 +83,7 @@ export default function ReportsPage() {
         >
           <Download className="size-4" /> Export CSV
         </button>
+        <ReportMenu from={rangeStart(range)} />
       </PageHeader>
 
       {error && <p className="mb-4 rounded-xl bg-brand-red-soft px-4 py-3 text-sm text-brand-red">{error}</p>}
@@ -203,5 +205,60 @@ export default function ReportsPage() {
         </div>
       )}
     </>
+  );
+}
+
+/** Full church report (attendance, follow-ups, finance) as Excel, Word or PDF */
+function ReportMenu({ from }: { from: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<ReportFormat | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(f: ReportFormat) {
+    setBusy(f);
+    setError(null);
+    try {
+      const { exportReport } = await import("@/lib/report");
+      await exportReport(f, from, null);
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create the report");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button className="btn-primary btn-md" onClick={() => setOpen((o) => !o)}>
+        <FileText className="size-4" /> Full Report
+      </button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-line bg-white p-1 shadow-lg">
+          {(
+            [
+              ["xlsx", "Excel (.xlsx)", "All sheets + attendance register"],
+              ["docx", "Word (.docx)", "Editable document"],
+              ["pdf", "PDF (.pdf)", "Ready to print or share"],
+            ] as const
+          ).map(([f, label, hint]) => (
+            <button
+              key={f}
+              disabled={busy !== null}
+              onClick={() => run(f)}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-canvas disabled:opacity-60"
+            >
+              {busy === f ? <Loader2 className="size-4 animate-spin text-navy-600" /> : <Download className="size-4 text-muted" />}
+              <span>
+                <span className="block font-medium">{label}</span>
+                <span className="block text-xs text-muted">{hint}</span>
+              </span>
+            </button>
+          ))}
+          {error && <p className="px-3 py-2 text-xs text-brand-red">{error}</p>}
+          <p className="border-t border-line px-3 py-2 text-[11px] text-muted">Covers the period selected on this page.</p>
+        </div>
+      )}
+    </div>
   );
 }

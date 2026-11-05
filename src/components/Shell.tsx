@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   BarChart3,
+  CloudOff,
+  RefreshCw,
   ChevronRight,
   ClipboardCheck,
   LayoutGrid,
@@ -19,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
+import { clearLocal, getAll, hasLocalData, pendingCount, startSync, sync, useSyncState } from "@/lib/store";
 import { initials } from "@/lib/utils";
 
 type Admin = { email: string; name: string; role: "super_admin" | "admin" };
@@ -36,8 +39,32 @@ const NAV = [
 const SUPER_NAV = [{ href: "/admins", label: "Admins", icon: ShieldCheck }];
 
 async function signOut() {
-  await supabase().auth.signOut();
-  window.location.href = "/login";
+  await sync();
+  if (pendingCount() > 0 && !window.confirm("Some changes have not reached the server yet (no internet). Sign out anyway and lose them?")) return;
+  await supabase().auth.signOut({ scope: "local" });
+  await clearLocal();
+  window.location.href = "/login/";
+}
+
+/** Small "Synced / Offline / Saving" badge */
+export function SyncBadge() {
+  const s = useSyncState();
+  const label = !s.online
+    ? `Offline${s.pending ? ` · ${s.pending} to send` : ""}`
+    : s.syncing || s.pending
+      ? `Syncing${s.pending ? ` · ${s.pending}` : ""}`
+      : "Synced";
+  const tone = !s.online ? "pill-bad" : s.syncing || s.pending ? "pill-info" : "pill-ok";
+  return (
+    <button
+      onClick={() => sync()}
+      className={tone}
+      title={s.lastSync ? `Last synced ${new Date(s.lastSync).toLocaleString("en-GB")}` : "Not synced yet"}
+    >
+      {s.online ? <RefreshCw className={`size-3 ${s.syncing ? "animate-spin" : ""}`} /> : <CloudOff className="size-3" />}
+      {label}
+    </button>
+  );
 }
 
 export default function Shell({ children }: { children: React.ReactNode }) {
@@ -48,14 +75,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      const sb = supabase();
-      const { data } = await sb.auth.getUser();
-      if (!data.user) {
-        window.location.href = "/login";
+      // getSession reads the saved login on this device, so it also works offline
+      const { data } = await supabase().auth.getSession();
+      const user = data.session?.user;
+      if (!user) {
+        window.location.href = "/login/";
         return;
       }
-      const email = data.user.email ?? "";
-      const { data: row } = await sb.from("admins").select("full_name, role").eq("email", email.toLowerCase()).maybeSingle();
+      const email = (user.email ?? "").toLowerCase();
+      startSync();
+      if (!(await hasLocalData())) await sync();
+      const admins = await getAll<{ email: string; full_name: string | null; role: Admin["role"] }>("admins");
+      const row = admins.find((a) => a.email.toLowerCase() === email);
       if (!row) {
         setDenied(true);
         return;
@@ -100,6 +131,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <p className="truncate text-sm font-semibold">NCA Ojo</p>
           <p className="truncate text-xs text-muted">Overcomers Parish</p>
         </div>
+      </div>
+      <div className="px-2 pb-4">
+        <SyncBadge />
       </div>
       <div className="border-t border-line pt-5">
         <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wider text-muted">Main</p>
@@ -171,7 +205,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <Menu className="size-5" />
               </button>
               <Image src="/logo.jpg" alt="" width={28} height={28} className="rounded-full" />
-              <span className="text-sm font-semibold">NCA Ojo Attendance</span>
+              <span className="flex-1 text-sm font-semibold">NCA Ojo</span>
+              <SyncBadge />
             </header>
             <main className="flex-1 bg-white px-4 py-5 sm:px-6 lg:px-7 lg:py-6">{children}</main>
           </div>
