@@ -47,7 +47,7 @@ async function signOut() {
 }
 
 /** Small "Synced / Offline / Saving" badge */
-export function SyncBadge() {
+export function SyncBadge({ compact = false }: { compact?: boolean }) {
   const s = useSyncState();
   const label = !s.online
     ? `Offline${s.pending ? ` · ${s.pending} to send` : ""}`
@@ -59,10 +59,11 @@ export function SyncBadge() {
     <button
       onClick={() => sync()}
       className={tone}
-      title={s.lastSync ? `Last synced ${new Date(s.lastSync).toLocaleString("en-GB")}` : "Not synced yet"}
+      aria-label={label}
+      title={s.lastSync ? `${label} · Last synced ${new Date(s.lastSync).toLocaleString("en-GB")}` : "Not synced yet"}
     >
       {s.online ? <RefreshCw className={`size-3 ${s.syncing ? "animate-spin" : ""}`} /> : <CloudOff className="size-3" />}
-      {label}
+      <span className={compact ? "lg:max-xl:sr-only" : ""}>{label}</span>
     </button>
   );
 }
@@ -179,18 +180,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 px-2 pb-5">
+      <div className="flex items-center gap-3 px-2 pb-5 lg:max-xl:justify-center lg:max-xl:px-0">
         <Image src="/logo.jpg" alt="" width={40} height={40} className="rounded-full" />
-        <div className="min-w-0 leading-tight">
+        <div className="min-w-0 leading-tight lg:max-xl:hidden">
           <p className="truncate text-sm font-semibold">NCA Ojo</p>
           <p className="truncate text-xs text-muted">Overcomers Parish</p>
         </div>
       </div>
-      <div className="px-2 pb-4">
-        <SyncBadge />
+      <div className="px-2 pb-4 lg:max-xl:flex lg:max-xl:justify-center lg:max-xl:px-0">
+        <SyncBadge compact />
       </div>
       <div className="border-t border-line pt-5">
-        <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wider text-muted">Main</p>
+        <p className="px-2 pb-2 lg:max-xl:hidden text-[11px] font-medium uppercase tracking-wider text-muted">Main</p>
         <nav className="space-y-1">
           {[...NAV, ...(admin.role === "super_admin" ? SUPER_NAV : [])].map(({ href, label, icon: Icon }) => {
             const active = isActive(href);
@@ -198,14 +199,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <Link
                 key={href}
                 href={href}
-                className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                title={label}
+                aria-label={label}
+                className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors lg:max-xl:justify-center lg:max-xl:px-0 lg:max-xl:py-3 ${
                   active ? "bg-canvas font-medium text-ink" : "text-muted hover:bg-canvas hover:text-ink"
                 }`}
               >
                 {active && <span className="absolute -left-4 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r bg-navy-600" />}
                 <Icon className={`size-[18px] ${active ? "text-navy-600" : ""}`} />
-                <span className="flex-1">{label}</span>
-                {active && <ChevronRight className="size-4 text-muted" />}
+                <span className="flex-1 lg:max-xl:hidden">{label}</span>
+                {active && <ChevronRight className="size-4 text-muted lg:max-xl:hidden" />}
               </Link>
             );
           })}
@@ -215,15 +218,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <div className="mt-auto space-y-1 border-t border-line pt-4">
         <button
           onClick={signOut}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted hover:bg-canvas hover:text-ink"
+          title="Sign out"
+          aria-label="Sign out"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted hover:bg-canvas hover:text-ink lg:max-xl:justify-center lg:max-xl:px-0 lg:max-xl:py-3"
         >
-          <LogOut className="size-[18px]" /> Sign out
+          <LogOut className="size-[18px]" /> <span className="lg:max-xl:hidden">Sign out</span>
         </button>
-        <div className="flex items-center gap-3 px-2 pt-3">
+        <div className="flex items-center gap-3 px-2 pt-3 lg:max-xl:justify-center lg:max-xl:px-0" title={`${admin.name} · ${admin.email}`}>
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-navy-50 text-xs font-semibold text-navy-600">
             {initials(admin.name)}
           </span>
-          <div className="min-w-0 leading-tight">
+          <div className="min-w-0 leading-tight lg:max-xl:hidden">
             <p className="truncate text-sm font-medium">{admin.name}</p>
             <p className="truncate text-xs text-muted">{admin.email}</p>
           </div>
@@ -234,10 +239,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <AdminContext.Provider value={admin}>
-      <div className="min-h-dvh p-0 lg:p-5">
-        <div className="flex min-h-dvh overflow-hidden bg-white lg:min-h-[calc(100dvh-2.5rem)] lg:rounded-3xl lg:border lg:border-line">
+      <div className="min-h-dvh p-0 xl:p-5">
+        <div className="flex min-h-dvh bg-white lg:border-line xl:min-h-[calc(100dvh-2.5rem)] xl:overflow-hidden xl:rounded-3xl xl:border">
           {/* Desktop sidebar */}
-          <aside className="hidden w-64 shrink-0 border-r border-line p-5 lg:block">{sidebar}</aside>
+          <aside className="sticky top-0 hidden max-h-dvh w-20 shrink-0 overflow-y-auto border-r border-line px-3 py-5 lg:block xl:w-64 xl:p-5">{sidebar}</aside>
 
           {/* Mobile drawer */}
           {open && (
@@ -262,7 +267,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <span className="flex-1 text-sm font-semibold">NCA Ojo</span>
               <SyncBadge />
             </header>
-            <main className="flex-1 bg-white px-4 py-5 sm:px-6 lg:px-7 lg:py-6">{children}</main>
+            <main className="min-w-0 flex-1 bg-white px-4 py-5 sm:px-6 lg:px-7 lg:py-6">{children}</main>
           </div>
         </div>
       </div>
@@ -280,12 +285,12 @@ export function PageHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
+    <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="min-w-0">
         <h1 className="text-xl font-semibold">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
       </div>
-      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
+      {children && <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">{children}</div>}
     </div>
   );
 }

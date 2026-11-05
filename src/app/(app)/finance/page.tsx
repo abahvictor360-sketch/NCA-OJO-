@@ -144,12 +144,12 @@ export default function FinancePage() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SummaryCard title="Total Income" amount={totals.income} cats={totals.incomeCats} highlight={["Tithe", "Offering"]} />
             <SummaryCard title="Total Expenses" amount={totals.expense} cats={totals.expenseCats} />
-            <div className="card">
+            <div className="card sm:col-span-2 lg:col-span-1">
               <p className="card-title">Balance</p>
-              <p className={`mt-1 text-3xl font-semibold ${totals.balance < 0 ? "text-brand-red" : ""}`}>{naira(totals.balance)}</p>
+              <p className={`mt-1 break-words text-2xl font-semibold tabular-nums xl:text-3xl ${totals.balance < 0 ? "text-brand-red" : ""}`}>{naira(totals.balance)}</p>
               <div className="mt-5 space-y-2.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted">Income</span>
@@ -248,7 +248,7 @@ function SummaryCard({ title, amount, cats, highlight = [] }: { title: string; a
   return (
     <div className="card">
       <p className="card-title">{title}</p>
-      <p className="mt-1 text-3xl font-semibold">{naira(amount)}</p>
+      <p className="mt-1 break-words text-2xl font-semibold tabular-nums xl:text-3xl">{naira(amount)}</p>
       <div className="mt-5">
         <SplitBar parts={shown.map(([label, value], i) => ({ label, value, color: COLORS[i % COLORS.length]! }))} />
       </div>
