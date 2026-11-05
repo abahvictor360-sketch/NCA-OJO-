@@ -197,8 +197,8 @@ npm run dist:win
 
 Output in `dist-desktop/`:
 
-- `NCA Ojo Attendance Setup 1.0.0.exe`: installer with Start menu and desktop shortcut.
-- `NCA-Ojo-Attendance-Portable-1.0.0.exe`: single file, runs without installing.
+- `NCA-Ojo-Attendance-Setup-<version>.exe`: installer with Start menu and desktop shortcut.
+- `NCA-Ojo-Attendance-Portable-<version>.exe`: single file, runs without installing.
 
 `npm run desktop` builds and opens it without packaging. The app's local database lives in
 `%APPDATA%
@@ -210,13 +210,23 @@ If `npm run dist:win` fails with "Cannot create symbolic link", extract the cach
 
 ## macOS desktop app
 
-Mac builds need a Mac, so they are made on GitHub: **Actions > Desktop app (macOS) > Run workflow**
-(enter the release tag, e.g. `v1.0.0`). It also runs by itself when a new release is published.
-It builds Intel and Apple Silicon versions as `.dmg` and `.zip` and attaches them to that release.
-The build reads `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from the repo's Actions variables.
+Mac builds need a Mac, so they are made on GitHub by the release workflow below.
 
 The Mac app is not notarized by Apple. First open: right-click the app > **Open** > **Open**.
 If macOS says it "is damaged", run once in Terminal: `xattr -cr "/Applications/NCA Ojo Attendance.app"`.
+
+## Releasing a new version (Windows + Mac)
+
+Releases are built on GitHub, so no Windows or Mac machine is needed:
+
+1. Bump `"version"` in `package.json` (e.g. `1.2.0`) and write the release text in `.github/release-notes.md`.
+2. Commit, then tag and push: `git tag v1.2.0 && git push origin main v1.2.0`
+   (or **Actions > Release desktop apps > Run workflow** and enter the tag).
+3. The workflow builds the Windows installer + portable .exe and the Intel + Apple Silicon Mac apps,
+   attaches them to a draft release, and publishes it once all builds succeed.
+
+The builds read `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from the repo's Actions variables
+(Settings > Secrets and variables > Actions > Variables).
 
 ## Install as a PWA
 

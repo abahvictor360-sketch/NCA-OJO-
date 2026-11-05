@@ -1,0 +1,105 @@
+# Builds the desktop apps (Windows + macOS) and publishes them as a GitHub release.
+# Start it by pushing a version tag (git tag v1.2.0 && git push origin v1.2.0),
+# or from Actions > "Release desktop apps" > Run workflow.
+# Release text comes from .github/release-notes.md.
+name: Release desktop apps
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (e.g. v1.2.0). Created on the selected branch if it does not exist.
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check build settings
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Set repository variables NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (Settings > Secrets and variables > Actions > Variables)"
+            exit 1
+          fi
+      - name: Create the release (as a draft until the apps are attached)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+              --title "NCA Ojo Attendance $TAG" --notes-file .github/release-notes.md
+          fi
+
+  windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build web app and Windows installer + portable .exe
+        run: npm run dist:win -- --publish never
+      - name: Attach to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist-desktop/*.exe --clobber
+
+  mac:
+    needs: release
+    runs-on: macos-14
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build web app and macOS app bundles
+        run: npm run dist:mac
+      - name: Sign ad-hoc and package as .dmg and .zip
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p release
+          for pair in "mac:Intel" "mac-arm64:AppleSilicon"; do
+            dir="dist-desktop/${pair%%:*}"; arch="${pair##*:}"
+            app="$dir/NCA Ojo Attendance.app"
+            # Ad-hoc signature so the app can open on Apple Silicon (not notarized)
+            codesign --force --deep --sign - "$app"
+            hdiutil create -volname "NCA Ojo Attendance" -srcfolder "$app" -ov -format UDZO "release/NCA-Ojo-Attendance-$VERSION-mac-$arch.dmg"
+            ditto -c -k --keepParent "$app" "release/NCA-Ojo-Attendance-$VERSION-mac-$arch.zip"
+          done
+          ls -la release
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" release/* --clobber
+
+  publish:
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$TAG" --draft=false --latest
