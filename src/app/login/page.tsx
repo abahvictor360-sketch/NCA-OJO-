@@ -10,12 +10,34 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"signin" | "setup">("signin");
+  const [info, setInfo] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { error } = await supabase().auth.signInWithPassword({ email, password });
+    setInfo(null);
+    if (mode === "setup") {
+      const { data, error } = await supabase().auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: { emailRedirectTo: `${window.location.origin}/login` },
+      });
+      setBusy(false);
+      if (error) {
+        setError(/registered/i.test(error.message) ? "This email already has a password. Sign in instead." : error.message);
+        return;
+      }
+      if (data.session) {
+        window.location.href = "/";
+        return;
+      }
+      setInfo("Almost done. Open the email we just sent, tap the confirm link, then sign in here.");
+      setMode("signin");
+      return;
+    }
+    const { error } = await supabase().auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     if (error) {
       setError("Wrong email or password.");
       setBusy(false);
@@ -35,8 +57,12 @@ export default function LoginPage() {
 
         <form onSubmit={onSubmit} className="card space-y-4 p-6">
           <div>
-            <h2 className="text-base font-semibold">Admin sign in</h2>
-            <p className="text-sm text-muted">Pastors and admins only.</p>
+            <h2 className="text-base font-semibold">{mode === "signin" ? "Admin sign in" : "Create your password"}</h2>
+            <p className="text-sm text-muted">
+              {mode === "signin"
+                ? "Pastors and admins only."
+                : "Use the email the super admin added. Choose a password of at least 6 characters."}
+            </p>
           </div>
 
           <label className="block space-y-1.5">
@@ -62,7 +88,8 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
-                autoComplete="current-password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input pl-9"
@@ -71,10 +98,22 @@ export default function LoginPage() {
           </label>
 
           {error && <p className="rounded-lg bg-brand-red-soft px-3 py-2 text-sm text-brand-red">{error}</p>}
+          {info && <p className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">{info}</p>}
 
           <button type="submit" disabled={busy} className="btn-primary btn-md w-full">
             {busy && <Loader2 className="size-4 animate-spin" />}
-            Sign in
+            {mode === "signin" ? "Sign in" : "Create password"}
+          </button>
+
+          <button
+            type="button"
+            className="w-full text-center text-sm text-navy-600 hover:underline"
+            onClick={() => {
+              setMode(mode === "signin" ? "setup" : "signin");
+              setError(null);
+            }}
+          >
+            {mode === "signin" ? "First time? Create password" : "Already have a password? Sign in"}
           </button>
         </form>
       </div>

@@ -13,14 +13,15 @@ import {
   LogOut,
   Menu,
   PhoneCall,
+  ShieldCheck,
   Users,
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { initials } from "@/lib/utils";
 
-type Admin = { email: string; name: string };
-const AdminContext = createContext<Admin>({ email: "", name: "" });
+type Admin = { email: string; name: string; role: "super_admin" | "admin" };
+const AdminContext = createContext<Admin>({ email: "", name: "", role: "admin" });
 export const useAdmin = () => useContext(AdminContext);
 
 const NAV = [
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/members", label: "Members", icon: Users },
   { href: "/reports", label: "Reports", icon: BarChart3 },
 ];
+const SUPER_NAV = [{ href: "/admins", label: "Admins", icon: ShieldCheck }];
 
 async function signOut() {
   await supabase().auth.signOut();
@@ -51,12 +53,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         return;
       }
       const email = data.user.email ?? "";
-      const { data: row } = await sb.from("admins").select("full_name").eq("email", email).maybeSingle();
+      const { data: row } = await sb.from("admins").select("full_name, role").eq("email", email.toLowerCase()).maybeSingle();
       if (!row) {
         setDenied(true);
         return;
       }
-      setAdmin({ email, name: row.full_name || email.split("@")[0]! });
+      setAdmin({ email, name: row.full_name || email.split("@")[0]!, role: row.role });
     })();
   }, []);
 
@@ -100,7 +102,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <div className="border-t border-line pt-5">
         <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wider text-muted">Main</p>
         <nav className="space-y-1">
-          {NAV.map(({ href, label, icon: Icon }) => {
+          {[...NAV, ...(admin.role === "super_admin" ? SUPER_NAV : [])].map(({ href, label, icon: Icon }) => {
             const active = isActive(href);
             return (
               <Link

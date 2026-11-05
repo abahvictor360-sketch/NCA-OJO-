@@ -58,7 +58,7 @@ Tables (all have row level security; only admins can read or write):
 
 | Table        | Purpose                                                        |
 | ------------ | -------------------------------------------------------------- |
-| `admins`     | Email allowlist. Only these emails can use the app.            |
+| `admins`     | Email allowlist with role (`super_admin` or `admin`). Only these emails can use the app. |
 | `members`    | Church members (name, phone, address). `active = false` hides them from attendance. |
 | `services`   | One row per Sunday. `closed = true` once attendance is final.  |
 | `attendance` | One row per member present at a service.                       |
@@ -104,6 +104,8 @@ npm run dev
 
 Open http://localhost:3000 and sign in with an admin account.
 
+All admin features are under `src/app/(app)/`; the super admin page is `src/app/(app)/admins/page.tsx`.
+
 ### Starting from a brand new Supabase project
 
 Only needed if the existing project is lost or you want a separate copy.
@@ -113,19 +115,32 @@ Only needed if the existing project is lost or you want a separate copy.
 3. Put the new URL and publishable key in `.env.local` (and in Vercel).
 4. Add an admin (next section).
 
-## Add or remove an admin
+## Admins and the super admin
 
-1. Supabase dashboard > Authentication > Users > **Add user** > enter email and password, tick "Auto confirm".
-2. SQL editor:
+- **Super admin** (`abahvictor760@gmail.com`): everything, plus the **Admins** page to add or remove admins.
+- **Admin**: attendance, members, follow-ups, reports.
 
-   ```sql
-   insert into public.admins (email, full_name) values ('pastor@example.com', 'Pastor Name');
-   ```
+Add an admin (super admin only):
 
-To remove someone, delete their row from `admins` (and the user under Authentication if you like).
+1. **Admins > Add Admin**, enter their email and choose a role.
+2. Send them the login link. On the login page they tap **First time? Create password**.
+3. If Supabase email confirmation is on, they confirm from the email, then sign in.
 
-Turn off public sign-ups: Authentication > Sign In / Providers > disable "Allow new users to sign up".
-Even if someone signs up, they see nothing unless their email is in `admins`.
+Anyone can technically create a password on the login page, but they see nothing unless their email is on
+the admin list. A super admin cannot remove themselves, so the app can't be locked out by accident.
+
+Supabase settings to check once (Authentication > URL Configuration):
+
+- **Site URL**: `https://nca-ojo-attendance.vercel.app`
+- **Redirect URLs**: add `https://nca-ojo-attendance.vercel.app/**` and `http://localhost:3000/**`
+
+Without these, the confirmation email link opens localhost instead of the live site.
+
+If the admin list is ever empty, add a super admin in the Supabase SQL editor:
+
+```sql
+insert into public.admins (email, role) values ('someone@example.com', 'super_admin');
+```
 
 ## CSV import format
 
