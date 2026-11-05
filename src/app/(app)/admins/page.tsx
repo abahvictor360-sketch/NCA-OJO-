@@ -1,12 +1,53 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, Copy, Plus, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { PageHeader, useAdmin } from "@/components/Shell";
 import { Avatar, Empty, Modal, Spinner } from "@/components/ui";
 import { supabase } from "@/lib/supabase/client";
 import { sync } from "@/lib/store";
-import { formatDate } from "@/lib/utils";
+import { formatDate, inviteLink } from "@/lib/utils";
+
+/** Copy text, also where the clipboard API is missing (older phones, in-app browsers) */
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
+
+function inviteMessage(email: string) {
+  return `You have been added as an admin on NCA Ojo Attendance. Open this link to create your password:\n${inviteLink(email)}`;
+}
+
+/** Copy button that briefly says "Copied" */
+function CopyButton({ text, label, className = "btn-outline btn-sm" }: { text: string; label: string; className?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={async () => {
+        if (await copyText(text)) {
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        } else window.prompt("Copy this link:", text);
+      }}
+    >
+      {done ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} {done ? "Copied" : label}
+    </button>
+  );
+}
 
 type AdminRow = { email: string; full_name: string | null; role: "super_admin" | "admin"; created_at: string };
 
@@ -16,7 +57,7 @@ export default function AdminsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<AdminRow | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [invite, setInvite] = useState<string | null>(null);
 
   const load = async () => {
     const { data, error } = await supabase().from("admins").select("*").order("created_at");
@@ -28,8 +69,6 @@ export default function AdminsPage() {
   }, []);
 
   if (me.role !== "super_admin") return <Empty>Only the super admin can manage admins.</Empty>;
-
-  const loginUrl = typeof window !== "undefined" ? `${window.location.origin}/login` : "/login";
 
   async function remove(r: AdminRow) {
     const { error } = await supabase().from("admins").delete().eq("email", r.email);
@@ -61,20 +100,14 @@ export default function AdminsPage() {
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted">
           <li>Add their email here.</li>
           <li>
-            Send them the login link. They tap <b className="text-ink">First time? Create password</b> and choose a password.
+            Tap <b className="text-ink">Copy invite</b> next to their name and send it to them. The link opens straight on{" "}
+            <b className="text-ink">Create your password</b> with their email filled in.
           </li>
           <li>If asked, they confirm their email from the message Supabase sends, then sign in.</li>
         </ol>
-        <button
-          className="btn-outline btn-sm mt-3"
-          onClick={() => {
-            navigator.clipboard?.writeText(loginUrl);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-        >
-          <Copy className="size-3.5" /> {copied ? "Copied" : "Copy login link"}
-        </button>
+        <div className="mt-3">
+          <CopyButton text={inviteLink()} label="Copy general invite link" />
+        </div>
       </div>
 
       <div className="card p-0">
@@ -84,7 +117,7 @@ export default function AdminsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px]">
+            <table className="w-full min-w-[640px]">
               <thead>
                 <tr>
                   <th className="th pl-4">Admin</th>
@@ -128,9 +161,12 @@ export default function AdminsPage() {
                       <td className="td whitespace-nowrap text-muted">{formatDate(r.created_at.slice(0, 10))}</td>
                       <td className="td pr-4 text-right">
                         {!self && (
-                          <button className="btn-outline btn-sm text-brand-red" onClick={() => setRemoving(r)}>
-                            <Trash2 className="size-3.5" /> Remove
-                          </button>
+                          <div className="flex justify-end gap-2">
+                            <CopyButton text={inviteLink(r.email)} label="Copy invite" />
+                            <button className="btn-outline btn-sm text-brand-red" onClick={() => setRemoving(r)}>
+                              <Trash2 className="size-3.5" /> Remove
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -145,11 +181,32 @@ export default function AdminsPage() {
       {addOpen && (
         <AddAdmin
           onClose={() => setAddOpen(false)}
-          onAdded={() => {
+          onAdded={(email) => {
             setAddOpen(false);
+            setInvite(email);
             load();
           }}
         />
+      )}
+
+      {invite && (
+        <Modal title="Admin added" onClose={() => setInvite(null)}>
+          <p className="text-sm text-muted">
+            Send <b className="text-ink">{invite}</b> this link. It opens the page where they create their password.
+          </p>
+          <p className="mt-3 break-all rounded-xl bg-canvas px-3 py-2 text-xs">{inviteLink(invite)}</p>
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <a
+              className="btn-outline btn-md"
+              href={`https://wa.me/?text=${encodeURIComponent(inviteMessage(invite))}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Send className="size-4" /> WhatsApp
+            </a>
+            <CopyButton text={inviteLink(invite)} label="Copy link" className="btn-primary btn-md" />
+          </div>
+        </Modal>
       )}
 
       {removing && (
@@ -171,7 +228,7 @@ export default function AdminsPage() {
   );
 }
 
-function AddAdmin({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+function AddAdmin({ onClose, onAdded }: { onClose: () => void; onAdded: (email: string) => void }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<"admin" | "super_admin">("admin");
@@ -190,7 +247,7 @@ function AddAdmin({ onClose, onAdded }: { onClose: () => void; onAdded: () => vo
         error.code === "23505" ? "That email is already an admin." : /fetch/i.test(error.message) ? "You need internet to add an admin." : error.message,
       );
     sync();
-    onAdded();
+    onAdded(email.trim().toLowerCase());
   }
 
   return (

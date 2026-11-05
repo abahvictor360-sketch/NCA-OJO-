@@ -4,9 +4,8 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Loader2, Lock, Mail } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
-
-// Confirmation emails must open the live site, also when signing up from the desktop app
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://nca-ojo-attendance.vercel.app";
+import { clearLocal } from "@/lib/store";
+import { SITE_URL } from "@/lib/utils";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -15,13 +14,33 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"signin" | "setup">("signin");
   const [info, setInfo] = useState<string | null>(null);
+  // Someone else is already signed in on this device while an invite link was opened
+  const [otherUser, setOtherUser] = useState<string | null>(null);
 
   useEffect(() => {
+    // Invite links look like /login/?setup=1&email=new.admin@example.com
+    const q = new URLSearchParams(window.location.search);
+    const invited = (q.get("email") ?? "").trim().toLowerCase();
+    const setup = q.has("setup");
+    if (setup) setMode("setup");
+    if (invited) setEmail(invited);
     (async () => {
       const { data } = await supabase().auth.getSession();
-      if (data.session) window.location.href = "/";
+      const current = data.session?.user.email?.toLowerCase();
+      if (!current) return;
+      // Already signed in: go to the app, unless this is an invite for someone else
+      if (setup && current !== invited) setOtherUser(current);
+      else window.location.href = "/";
     })();
   }, []);
+
+  async function switchUser() {
+    setBusy(true);
+    await supabase().auth.signOut({ scope: "local" });
+    await clearLocal();
+    setOtherUser(null);
+    setBusy(false);
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,7 +84,24 @@ export default function LoginPage() {
           <p className="text-sm text-muted">Overcomers Parish · Attendance</p>
         </div>
 
-        <form onSubmit={onSubmit} className="card space-y-4 p-6">
+        {otherUser && (
+          <div className="card mb-4 space-y-3 p-5 text-sm">
+            <p>
+              This device is signed in as <b>{otherUser}</b>. To create a password for{" "}
+              {email ? <b>{email}</b> : "a new admin"}, sign that account out first.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={switchUser}>
+                Sign out {otherUser.split("@")[0]}
+              </button>
+              <button type="button" className="btn-outline btn-sm" onClick={() => (window.location.href = "/")}>
+                Back to the app
+              </button>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={onSubmit} className={`card space-y-4 p-6 ${otherUser ? "hidden" : ""}`}>
           <div>
             <h2 className="text-base font-semibold">{mode === "signin" ? "Admin sign in" : "Create your password"}</h2>
             <p className="text-sm text-muted">

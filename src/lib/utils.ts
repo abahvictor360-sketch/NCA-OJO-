@@ -94,3 +94,14 @@ export function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** The live web address. Links we hand to people (invites, confirmation emails) must use it,
+ *  also when they are made inside the desktop app whose own address only works there. */
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://nca-ojo-attendance.vercel.app").replace(/\/$/, "");
+
+/** Link that opens the login page straight on "Create your password", with the email filled in */
+export function inviteLink(email?: string) {
+  const q = new URLSearchParams({ setup: "1" });
+  if (email) q.set("email", email);
+  return `${SITE_URL}/login/?${q}`;
+}
