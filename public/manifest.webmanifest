@@ -1,0 +1,10 @@
+{
+  "name": "NCA Ojo Attendance",
+  "short_name": "NCA Ojo",
+  "description": "Sunday attendance and follow-up for New Creation Assembly Ojo, Overcomers Parish",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f4f7",
+  "theme_color": "#2e3175",
+  "icons": [{ "src": "/logo.jpg", "sizes": "712x712", "type": "image/jpeg", "purpose": "any" }]
+}
