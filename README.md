@@ -59,7 +59,7 @@ Tables (all have row level security; only admins can read or write):
 | Table        | Purpose                                                        |
 | ------------ | -------------------------------------------------------------- |
 | `admins`     | Email allowlist. Only these emails can use the app.            |
-| `members`    | Church members. `active = false` hides them from attendance.   |
+| `members`    | Church members (name, phone, address). `active = false` hides them from attendance. |
 | `services`   | One row per Sunday. `closed = true` once attendance is final.  |
 | `attendance` | One row per member present at a service.                       |
 | `follow_ups` | One row per member absent at a closed service, with note/done. |
@@ -132,9 +132,9 @@ Even if someone signs up, they see nothing unless their email is in `admins`.
 First row is headers. Only `full_name` (or `name`) is required.
 
 ```csv
-full_name,phone,gender,joined_on
-Adaeze Okafor,08030000001,female,2024-01-07
-Bola Adeyemi,08030000002,male,
+full_name,phone,address,gender,joined_on
+Adaeze Okafor,08030000001,"No 2 Olumide, Agric",female,2024-01-07
+Bola Adeyemi,08030000002,,male,
 ```
 
 Names already in the list are skipped, so importing the same file twice is safe.

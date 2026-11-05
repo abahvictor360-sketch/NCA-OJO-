@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase/client";
 import { downloadCSV, formatDate, toISODate, type Member } from "@/lib/utils";
 
 type Draft = Omit<Member, "id"> & { id?: string };
-const EMPTY: Draft = { full_name: "", phone: "", gender: null, notes: "", active: true, joined_on: toISODate(new Date()) };
+const EMPTY: Draft = { full_name: "", phone: "", address: "", gender: null, notes: "", active: true, joined_on: toISODate(new Date()) };
 
 export default function MembersPage() {
   const [members, setMembers] = useState<Member[] | null>(null);
@@ -29,7 +29,7 @@ export default function MembersPage() {
     return (members ?? []).filter(
       (m) =>
         (show === "all" || (show === "active" ? m.active : !m.active)) &&
-        (!needle || m.full_name.toLowerCase().includes(needle) || (m.phone ?? "").includes(needle)),
+        (!needle || m.full_name.toLowerCase().includes(needle) || (m.phone ?? "").includes(needle) || (m.address ?? "").toLowerCase().includes(needle)),
     );
   }, [members, q, show]);
 
@@ -51,6 +51,7 @@ export default function MembersPage() {
               members.map((m) => ({
                 full_name: m.full_name,
                 phone: m.phone ?? "",
+                address: m.address ?? "",
                 gender: m.gender ?? "",
                 joined_on: m.joined_on,
                 active: m.active ? "yes" : "no",
@@ -73,7 +74,7 @@ export default function MembersPage() {
         <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <input className="input pl-9" placeholder="Search name or phone" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="input pl-9" placeholder="Search name, phone or address" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <div className="flex rounded-xl border border-line p-1 text-xs">
             {(["active", "inactive", "all"] as const).map((k) => (
@@ -94,11 +95,12 @@ export default function MembersPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px]">
+            <table className="w-full min-w-[760px]">
               <thead>
                 <tr>
                   <th className="th pl-4">Name</th>
                   <th className="th">Phone</th>
+                  <th className="th">Address</th>
                   <th className="th">Joined</th>
                   <th className="th">Status</th>
                   <th className="th pr-4" />
@@ -110,11 +112,12 @@ export default function MembersPage() {
                     <td className="td pl-4">
                       <div className="flex items-center gap-3">
                         <Avatar name={m.full_name} tone={m.gender === "female" ? "red" : "navy"} />
-                        <span className="font-medium">{m.full_name}</span>
+                        <span className="whitespace-nowrap font-medium">{m.full_name}</span>
                       </div>
                     </td>
-                    <td className="td text-muted">{m.phone || "-"}</td>
-                    <td className="td text-muted">{formatDate(m.joined_on)}</td>
+                    <td className="td whitespace-nowrap text-muted">{m.phone || "-"}</td>
+                    <td className="td max-w-[16rem] truncate text-muted" title={m.address ?? ""}>{m.address || "-"}</td>
+                    <td className="td whitespace-nowrap text-muted">{m.joined_on <= "2000-01-01" ? "Existing" : formatDate(m.joined_on)}</td>
                     <td className="td">{m.active ? <span className="pill-ok">Active</span> : <span className="pill-muted">Inactive</span>}</td>
                     <td className="td pr-4 text-right">
                       <button className="btn-outline btn-sm" onClick={() => setDraft({ ...m })}>
@@ -165,6 +168,7 @@ function MemberForm({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
     const payload = {
       full_name: d.full_name.trim(),
       phone: d.phone?.trim() || null,
+      address: d.address?.trim() || null,
       gender: d.gender || null,
       notes: d.notes?.trim() || null,
       active: d.active,
@@ -185,6 +189,9 @@ function MemberForm({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
         </Field>
         <Field label="Phone">
           <input className="input" type="tel" value={d.phone ?? ""} onChange={(e) => setD({ ...d, phone: e.target.value })} placeholder="0803 000 0000" />
+        </Field>
+        <Field label="Address">
+          <input className="input" value={d.address ?? ""} onChange={(e) => setD({ ...d, address: e.target.value })} placeholder="No 13 Mission Street, Onireke, Ojo" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Gender">
@@ -219,7 +226,7 @@ function MemberForm({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
   );
 }
 
-type ParsedRow = { full_name: string; phone: string | null; gender: "male" | "female" | null; joined_on: string };
+type ParsedRow = { full_name: string; phone: string | null; address: string | null; gender: "male" | "female" | null; joined_on: string };
 
 function ImportDialog({ existing, onClose, onDone }: { existing: Member[]; onClose: () => void; onDone: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -250,6 +257,7 @@ function ImportDialog({ existing, onClose, onDone }: { existing: Member[]; onClo
           out.push({
             full_name: name,
             phone: (r.phone || r.phone_number || r.mobile || "").trim() || null,
+            address: (r.address || "").trim() || null,
             gender: g.startsWith("m") ? "male" : g.startsWith("f") ? "female" : null,
             joined_on: /^\d{4}-\d{2}-\d{2}$/.test(joined) ? joined : "2000-01-01",
           });
@@ -280,7 +288,7 @@ function ImportDialog({ existing, onClose, onDone }: { existing: Member[]; onClo
       <div className="space-y-4 text-sm">
         <p className="text-muted">
           The first row must be headers. Needed: <code className="rounded bg-canvas px-1">full_name</code> (or{" "}
-          <code className="rounded bg-canvas px-1">name</code>). Optional: <code className="rounded bg-canvas px-1">phone</code>,{" "}
+          <code className="rounded bg-canvas px-1">name</code>). Optional: <code className="rounded bg-canvas px-1">phone</code>, <code className="rounded bg-canvas px-1">address</code>,{" "}
           <code className="rounded bg-canvas px-1">gender</code>, <code className="rounded bg-canvas px-1">joined_on</code> (YYYY-MM-DD).
           Names already on the list are skipped.
         </p>

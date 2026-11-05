@@ -2,6 +2,7 @@ export type Member = {
   id: string;
   full_name: string;
   phone: string | null;
+  address: string | null;
   gender: "male" | "female" | null;
   notes: string | null;
   active: boolean;
