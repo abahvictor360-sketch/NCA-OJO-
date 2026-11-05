@@ -222,16 +222,31 @@ async function flushQueue(): Promise<boolean> {
   return true;
 }
 
+/** Download order: the admin list first, because the app needs it to let anyone in */
+const PULL_ORDER: Table[] = ["admins", ...TABLES.filter((t) => t !== "admins")];
+
 async function pullAll() {
   const sb = supabase();
   const d = await db();
-  for (const t of TABLES) {
+  const failed: string[] = [];
+  for (const t of PULL_ORDER) {
     const rows: Row[] = [];
+    let error: { message: string } | null = null;
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await sb.from(t).select("*").range(from, from + 999);
-      if (error) throw error;
-      rows.push(...(data ?? []));
-      if (!data || data.length < 1000) break;
+      const res = await sb.from(t).select("*").range(from, from + 999);
+      if (res.error) {
+        error = res.error;
+        break;
+      }
+      rows.push(...(res.data ?? []));
+      if (!res.data || res.data.length < 1000) break;
+    }
+    if (error) {
+      if (isNetworkError(error)) throw error;
+      // One broken table (e.g. a missing migration) must not stop the others from downloading
+      console.error(`Could not download ${t}:`, error.message);
+      failed.push(`${t} (${error.message})`);
+      continue;
     }
     // Skip replacing a table if new local changes were queued meanwhile
     if ((await d.count("queue")) > 0) return false;
@@ -241,6 +256,7 @@ async function pullAll() {
     await tx.done;
     bump(t);
   }
+  setState({ error: failed.length ? `Could not download: ${failed.join(", ")}` : null });
   return true;
 }
 
@@ -264,7 +280,8 @@ export function sync(): Promise<void> {
       setState({ online: true, lastSync: pulled ? now : state.lastSync });
       if (!pulled) scheduleSync(500);
     } catch (e) {
-      setState({ online: !isNetworkError(e) });
+      const network = isNetworkError(e);
+      setState({ online: !network, error: network ? null : e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e) });
     } finally {
       setState({ syncing: false });
       running = null;

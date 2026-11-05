@@ -39,7 +39,7 @@ const NAV = [
 const SUPER_NAV = [{ href: "/admins", label: "Admins", icon: ShieldCheck }];
 
 async function signOut() {
-  await sync();
+  await withTimeout(sync(), 8_000, undefined);
   if (pendingCount() > 0 && !window.confirm("Some changes have not reached the server yet (no internet). Sign out anyway and lose them?")) return;
   await supabase().auth.signOut({ scope: "local" });
   await clearLocal();
@@ -67,35 +67,89 @@ export function SyncBadge() {
   );
 }
 
+/** Resolve with `fallback` if `p` takes longer than `ms` (slow mobile data must not freeze the app) */
+function withTimeout<T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([Promise.resolve(p), new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
+}
+
+type AdminRow = { email: string; full_name: string | null; role: Admin["role"] };
+
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [denied, setDenied] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
-      // getSession reads the saved login on this device, so it also works offline
-      const { data } = await supabase().auth.getSession();
-      const user = data.session?.user;
-      if (!user) {
-        window.location.href = "/login/";
-        return;
+      try {
+        // getSession reads the saved login on this device, so it also works offline
+        const got = await withTimeout(supabase().auth.getSession(), 15_000, null);
+        if (!got) {
+          setFailure("Could not reach the server. Check your internet connection and try again.");
+          return;
+        }
+        const user = got.data.session?.user;
+        if (!user) {
+          window.location.href = "/login/";
+          return;
+        }
+        const email = (user.email ?? "").toLowerCase();
+        startSync();
+        // First visit on this device: wait for the download, but never forever
+        if (!(await hasLocalData())) await withTimeout(sync(), 20_000, undefined);
+
+        let row = (await getAll<AdminRow>("admins")).find((a) => a.email.toLowerCase() === email);
+        if (!row) {
+          // The local copy may be empty because the download failed or is still running: ask the server directly
+          const res = await withTimeout(
+            supabase().from("admins").select("email, full_name, role").eq("email", email).maybeSingle(),
+            15_000,
+            null,
+          );
+          if (!res || (res.error && !res.data)) {
+            setFailure(
+              res?.error && !/fetch|network|load failed/i.test(res.error.message)
+                ? `The server said: ${res.error.message}`
+                : "Could not reach the server. Check your internet connection and try again.",
+            );
+            return;
+          }
+          row = (res.data as AdminRow | null) ?? undefined;
+        }
+        if (!row) {
+          setDenied(true);
+          return;
+        }
+        setAdmin({ email, name: row.full_name || email.split("@")[0]!, role: row.role });
+      } catch (e) {
+        console.error("Startup failed", e);
+        setFailure(e instanceof Error ? e.message : String(e));
       }
-      const email = (user.email ?? "").toLowerCase();
-      startSync();
-      if (!(await hasLocalData())) await sync();
-      const admins = await getAll<{ email: string; full_name: string | null; role: Admin["role"] }>("admins");
-      const row = admins.find((a) => a.email.toLowerCase() === email);
-      if (!row) {
-        setDenied(true);
-        return;
-      }
-      setAdmin({ email, name: row.full_name || email.split("@")[0]!, role: row.role });
     })();
   }, []);
 
   useEffect(() => setOpen(false), [pathname]);
+
+  if (failure) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center px-4">
+        <div className="card max-w-sm text-center">
+          <h1 className="text-lg font-semibold">Could not open the app</h1>
+          <p className="mt-1 text-sm text-muted">{failure}</p>
+          <div className="mt-4 flex justify-center gap-2">
+            <button onClick={() => window.location.reload()} className="btn-primary btn-md">
+              Try again
+            </button>
+            <button onClick={signOut} className="btn-outline btn-md">
+              Sign out
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (denied) {
     return (
