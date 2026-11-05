@@ -2,7 +2,7 @@
 
 import Papa from "papaparse";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Pencil, Plus, Search, Upload } from "lucide-react";
+import { Download, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Avatar, Empty, Modal, Spinner } from "@/components/ui";
 import { fetchMembers } from "@/lib/data";
@@ -160,6 +160,7 @@ function MemberForm({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
   const [d, setD] = useState<Draft>(draft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -176,6 +177,15 @@ function MemberForm({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
     };
     const sb = supabase().from("members");
     const { error } = d.id ? await sb.update(payload).eq("id", d.id) : await sb.insert(payload);
+    setBusy(false);
+    if (error) return setError(error.message);
+    onSaved();
+  }
+
+  async function remove() {
+    if (!d.id) return;
+    setBusy(true);
+    const { error } = await supabase().from("members").delete().eq("id", d.id);
     setBusy(false);
     if (error) return setError(error.message);
     onSaved();
@@ -213,14 +223,38 @@ function MemberForm({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
           Active member (shows on attendance list)
         </label>
         {error && <p className="text-sm text-brand-red">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" className="btn-outline btn-md" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn-primary btn-md" disabled={busy}>
-            Save
-          </button>
-        </div>
+        {confirmDelete ? (
+          <div className="rounded-xl bg-brand-red-soft p-3 text-sm">
+            <p className="font-medium text-brand-red">Delete {d.full_name} for good?</p>
+            <p className="mt-1 text-muted">
+              Their attendance history and follow-ups are deleted too, and reports change. To keep the history, untick
+              &quot;Active member&quot; and save.
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" className="btn-outline btn-sm" onClick={() => setConfirmDelete(false)}>
+                Keep member
+              </button>
+              <button type="button" className="btn-danger btn-sm" disabled={busy} onClick={remove}>
+                <Trash2 className="size-3.5" /> Yes, delete
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 pt-2">
+            {d.id && (
+              <button type="button" className="btn-outline btn-md text-brand-red" onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="size-4" /> Delete
+              </button>
+            )}
+            <span className="flex-1" />
+            <button type="button" className="btn-outline btn-md" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn-primary btn-md" disabled={busy}>
+              Save
+            </button>
+          </div>
+        )}
       </form>
     </Modal>
   );
