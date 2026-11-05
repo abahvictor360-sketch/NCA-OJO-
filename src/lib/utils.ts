@@ -3,6 +3,7 @@ export type Member = {
   full_name: string;
   phone: string | null;
   address: string | null;
+  email: string | null;
   gender: "male" | "female" | null;
   notes: string | null;
   active: boolean;

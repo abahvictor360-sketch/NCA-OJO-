@@ -19,6 +19,8 @@ Members never log in. Only admin emails listed in the `admins` table can sign in
 - **Follow-ups**: absent members grouped by Sunday, with Call and WhatsApp buttons, a note field and a Done button.
 - **Reports**: attended / missed / missed-in-a-row per member, per-service totals, date range, CSV export.
 - **Overview**: dashboard cards for the last service, attendance rate, members, open follow-ups.
+- **Finance**: record tithe, offering and other income (optionally linked to a member) and expenses.
+  Totals, balance and category breakdown by period, edit/delete entries, CSV export. Amounts in Naira.
 
 ## Tech stack
 
@@ -42,6 +44,8 @@ src/
     (app)/follow-ups/         Follow-up list
     (app)/members/            Member list, add/edit, CSV import
     (app)/reports/            Missed counts and service history
+    (app)/finance/            Tithe, offering and expenses
+    (app)/admins/             Super admin: manage admins
     globals.css               Brand colors and shared styles (card, btn-*, pill-*, input)
   components/Shell.tsx        Sidebar, mobile menu, admin context
   components/ui.tsx           Charts, modal, pills, avatar
@@ -59,10 +63,11 @@ Tables (all have row level security; only admins can read or write):
 | Table        | Purpose                                                        |
 | ------------ | -------------------------------------------------------------- |
 | `admins`     | Email allowlist with role (`super_admin` or `admin`). Only these emails can use the app. |
-| `members`    | Church members (name, phone, address). `active = false` hides them from attendance. |
+| `members`    | Church members (name, phone, email, address). `active = false` hides them from attendance. |
 | `services`   | One row per Sunday. `closed = true` once attendance is final.  |
 | `attendance` | One row per member present at a service.                       |
 | `follow_ups` | One row per member absent at a closed service, with note/done. |
+| `finance_entries` | Income (tithe, offering, ...) and expenses: date, category, amount, optional member. |
 
 Functions:
 
@@ -147,9 +152,9 @@ insert into public.admins (email, role) values ('someone@example.com', 'super_ad
 First row is headers. Only `full_name` (or `name`) is required.
 
 ```csv
-full_name,phone,address,gender,joined_on
-Adaeze Okafor,08030000001,"No 2 Olumide, Agric",female,2024-01-07
-Bola Adeyemi,08030000002,,male,
+full_name,phone,email,address,gender,joined_on
+Adaeze Okafor,08030000001,adaeze@example.com,"No 2 Olumide, Agric",female,2024-01-07
+Bola Adeyemi,08030000002,,,male,
 ```
 
 Names already in the list are skipped, so importing the same file twice is safe.

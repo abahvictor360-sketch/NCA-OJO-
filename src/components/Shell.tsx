@@ -15,6 +15,7 @@ import {
   PhoneCall,
   ShieldCheck,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/follow-ups", label: "Follow-ups", icon: PhoneCall },
   { href: "/members", label: "Members", icon: Users },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/finance", label: "Finance", icon: Wallet },
 ];
 const SUPER_NAV = [{ href: "/admins", label: "Admins", icon: ShieldCheck }];
 
